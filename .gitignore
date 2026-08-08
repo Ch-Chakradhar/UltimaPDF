@@ -1,0 +1,16 @@
+*.iml
+.gradle
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+
+# Secrets
+local.properties
+keystore.properties
+*.keystore
+
+# IDE files
+.idea/
+.artifacts/

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Large White Document Shape -->
+    <path
+        android:fillColor="@color/white"
+        android:pathData="M24,20 H64 L84,40 V88 C84,90.2 82.2,92 80,92 H28 C25.8,92 24,90.2 24,88 V20 Z" />
+
+    <!-- Accent for the corner fold -->
+    <path
+        android:fillColor="#EF5350"
+        android:pathData="M64,20 V40 H84 Z" />
+
+    <!-- Bold Stylized 'U' representing Ultima -->
+    <path
+        android:fillColor="@color/logo_background"
+        android:pathData="M38,55 V75 C38,81.5 43.5,87 54,87 C64.5,87 70,81.5 70,75 V55 H62 V75 C62,79.5 59,82 54,82 C49,82 46,79.5 46,75 V55 H38 Z" />
+
+    <!-- Decorative lines for PDF content -->
+    <path
+        android:fillColor="@color/logo_background"
+        android:pathData="M38,40 H60 V44 H38 Z" />
+    <path
+        android:fillColor="@color/logo_background"
+        android:pathData="M38,48 H68 V50 H38 Z" />
+</vector>
