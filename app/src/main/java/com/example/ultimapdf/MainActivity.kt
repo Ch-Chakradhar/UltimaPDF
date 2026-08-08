@@ -2,6 +2,7 @@ package com.example.ultimapdf
 
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
@@ -14,6 +15,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -33,10 +36,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -60,6 +65,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -74,6 +80,7 @@ import androidx.navigation.compose.rememberNavController
 import android.util.Log
 import androidx.pdf.compose.PdfViewerState
 import com.example.ultimapdf.ui.theme.UltimaPDFTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -193,8 +200,8 @@ fun MainScreen(
     pageGap: Int,
     onNavigateToSettings: () -> Unit
 ) {
-    var pdfUriString by rememberSaveable { mutableStateOf<String?>(null) }
-    var lastHandledIntentUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    var pdfUriString by rememberSaveable { mutableStateOf(initialPdfUri?.toString()) }
+    var lastHandledIntentUriString by rememberSaveable { mutableStateOf(initialPdfUri?.toString()) }
 
     val pdfUri = remember(pdfUriString) { pdfUriString?.toUri() }
 
@@ -213,7 +220,7 @@ fun MainScreen(
     var wholeWord by rememberSaveable { mutableStateOf(false) }
     var currentMatchIndex by rememberSaveable { mutableIntStateOf(0) }
     var totalMatchCount by remember { mutableIntStateOf(0) }
-    val pdfViewerState = remember { PdfViewerState() }
+    val pdfViewerState = remember(pdfUriString) { PdfViewerState() }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -223,23 +230,36 @@ fun MainScreen(
             isSearching = false
             searchQuery = ""
         } else {
-            pdfUri?.let { uri ->
-                val currentPage = pdfViewerState.firstVisiblePage
+            val uriToSave = pdfUriString
+            val pageToSave = pdfViewerState.firstVisiblePage
+            pdfUriString = null
+            if (uriToSave != null) {
                 scope.launch {
-                    Log.d("UltimaPDF", "BackHandler: Saving page $currentPage for $uri")
-                    PdfDataStore.saveLastPage(context, uri.toString(), currentPage)
-                    pdfUriString = null
+                    Log.d("UltimaPDF", "BackHandler: Saving page $pageToSave for $uriToSave")
+                    PdfDataStore.saveLastPage(context, uriToSave, pageToSave)
                 }
-            } ?: run {
-                pdfUriString = null
             }
         }
     }
 
     var isImmersive by rememberSaveable { mutableStateOf(false) }
     var currentTitle by rememberSaveable { mutableStateOf("UltimaPDF") }
+    var fabVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isImmersive, isSearching, pdfUriString, pdfViewerState.firstVisiblePage, pdfViewerState.firstVisiblePageOffset) {
+        if (pdfUriString != null && !isSearching) {
+            fabVisible = true
+            delay(3000)
+            fabVisible = false
+        } else {
+            fabVisible = false
+        }
+    }
     
     val window = (context as? Activity)?.window
+    val activity = context as? Activity
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val windowInsetsController = remember(window) {
         window?.let { WindowCompat.getInsetsController(it, it.decorView) }
     }
@@ -366,15 +386,14 @@ fun MainScreen(
                         navigationIcon = {
                             if (pdfUriString != null) {
                                 IconButton(onClick = {
-                                    pdfUri?.let { uri ->
-                                        val currentPage = pdfViewerState.firstVisiblePage
+                                    val uriToSave = pdfUriString
+                                    val pageToSave = pdfViewerState.firstVisiblePage
+                                    pdfUriString = null
+                                    if (uriToSave != null) {
                                         scope.launch {
-                                            Log.d("UltimaPDF", "TopBar: Saving page $currentPage for $uri")
-                                            PdfDataStore.saveLastPage(context, uri.toString(), currentPage)
-                                            pdfUriString = null
+                                            Log.d("UltimaPDF", "TopBar: Saving page $pageToSave for $uriToSave")
+                                            PdfDataStore.saveLastPage(context, uriToSave, pageToSave)
                                         }
-                                    } ?: run {
-                                        pdfUriString = null
                                     }
                                 }) {
                                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -394,6 +413,25 @@ fun MainScreen(
                         scrollBehavior = scrollBehavior,
                         windowInsets = WindowInsets(0, 0, 0, 0)
                     )
+                }
+            }
+        },
+        floatingActionButton = {
+            AnimatedVisibility(
+                visible = fabVisible,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut()
+            ) {
+                FloatingActionButton(
+                    onClick = {
+                        activity?.requestedOrientation = if (isLandscape) {
+                            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                        } else {
+                            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                        }
+                    }
+                ) {
+                    Icon(Icons.Default.ScreenRotation, contentDescription = "Rotate Screen")
                 }
             }
         },

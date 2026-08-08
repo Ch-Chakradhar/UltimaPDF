@@ -12,7 +12,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -197,20 +199,6 @@ fun NativePdfReaderScreen(
     
     val recentFiles by PdfDataStore.getRecentFiles(context).collectAsState(initial = emptyList())
 
-    LaunchedEffect(recentFiles) {
-        recentFiles.forEach { uriString ->
-            try {
-                val uri = uriString.toUri()
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (e: Exception) {
-                // Ignore
-            }
-        }
-    }
-
     LaunchedEffect(pdfUri) {
         val name = pdfUri?.let { getFileName(context, it) } ?: "UltimaPDF"
         onTitleChange(name)
@@ -333,15 +321,13 @@ fun NativePdfReaderScreen(
     // Restore viewer state when document is loaded and DataStore has been checked
     LaunchedEffect(pdfDocument, isDataStoreLoading) {
         if (pdfDocument != null && !isDataStoreLoading) {
-            if (persistedPage != -1 || persistedZoom != 1f) {
-                val pageToScroll = if (persistedPage == -1) 0 else persistedPage
-                pdfViewerState.scrollToPage(pageToScroll)
-                pdfViewerState.zoomScroll {
-                    zoomTo(persistedZoom)
-                }
-                // Give some time for the viewer to settle before allowing saves
-                delay(200.milliseconds)
+            val pageToScroll = if (persistedPage == -1) 0 else persistedPage
+            pdfViewerState.scrollToPage(pageToScroll)
+            pdfViewerState.zoomScroll {
+                zoomTo(persistedZoom)
             }
+            // Give some time for the viewer to settle before allowing saves
+            delay(200.milliseconds)
             isRestoring = false
         }
     }
@@ -461,8 +447,8 @@ fun NativePdfReaderScreen(
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         items(recentFiles) { uriString ->
-                            val uri = uriString.toUri()
-                            val fileName = getFileName(context, uri)
+                            val uri = remember(uriString) { uriString.toUri() }
+                            val fileName = remember(uriString) { getFileName(context, uri) }
                             ElevatedCard(
                                 onClick = { onPdfUriChange(uri) },
                                 modifier = Modifier.fillMaxWidth()
@@ -513,9 +499,14 @@ fun NativePdfReaderScreen(
                         .fillMaxSize()
                         .onSizeChanged { viewportSize = it }
                         .pointerInput(Unit) {
-                            detectTapGestures(
-                                onTap = { onToggleImmersive() }
-                            )
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val up = waitForUpOrCancellation()
+                                // If it was a quick tap and not consumed by others (like selection handles)
+                                if (up != null && (up.uptimeMillis - down.uptimeMillis) < 200) {
+                                    onToggleImmersive()
+                                }
+                            }
                         }
                         .background(
                             if (viewMode == PdfViewMode.NORMAL) 
@@ -528,7 +519,9 @@ fun NativePdfReaderScreen(
                     state = pdfViewerState,
                     verticalPageSpacing = pageGap.dp,
                     contentPadding = contentPadding,
-                    fastScrollConfig = fastScrollConfig
+                    fastScrollConfig = fastScrollConfig,
+                    isImageSelectionEnabled = true,
+                    isFormFillingEnabled = true
                 )
 
                 // Floating Page Indicator

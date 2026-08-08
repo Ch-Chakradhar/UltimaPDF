@@ -9,4 +9,5 @@
     <color name="white">#FFFFFFFF</color>
     <color name="logo_background">#B71C1C</color>
     <color name="logo_foreground">#FFFFFF</color>
+    <color name="pdf_viewer_selection_handles">#FF6200EE</color> <!-- purple_500 -->
 </resources>
