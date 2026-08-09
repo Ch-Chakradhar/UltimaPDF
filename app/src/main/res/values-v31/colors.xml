@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Use system dynamic color for PDF selection handles on Android 12+ -->
+    <color name="pdf_viewer_selection_handles" tools:override="true">@android:color/system_accent1_600</color>
+</resources>

@@ -7,10 +7,12 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
+import androidx.activity.viewModels
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -84,7 +86,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private var intentUri by mutableStateOf<Uri?>(null)
+    private val viewModel: PdfViewModel by viewModels()
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -94,16 +96,16 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent) {
         if (intent.action == Intent.ACTION_VIEW && intent.type == "application/pdf") {
-            intentUri = intent.data
+            viewModel.setUri(intent.data)
         } else if (intent.action == Intent.ACTION_SEND && intent.type == "application/pdf") {
             val uri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
-            intentUri = uri
+            viewModel.setUri(uri)
         }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.putParcelable("saved_intent_uri", intentUri)
+        outState.putParcelable("saved_intent_uri", viewModel.pdfUri.value)
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -111,12 +113,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         if (savedInstanceState != null) {
-            intentUri = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            val intentUri = if (android.os.Build.VERSION.SDK_INT >= 33) {
                 savedInstanceState.getParcelable("saved_intent_uri", Uri::class.java)
             } else {
                 @Suppress("DEPRECATION")
                 savedInstanceState.getParcelable("saved_intent_uri")
             }
+            viewModel.setUri(intentUri)
         } else {
             handleIntent(intent)
         }
@@ -157,7 +160,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     composable("main") {
                         MainScreen(
-                            initialPdfUri = intentUri,
+                            viewModel = viewModel,
                             viewMode = viewMode,
                             pageGap = pageGap,
                             onNavigateToSettings = { navController.navigate("settings") }
@@ -195,59 +198,47 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    initialPdfUri: Uri? = null,
+    viewModel: PdfViewModel,
     viewMode: PdfViewMode,
     pageGap: Int,
     onNavigateToSettings: () -> Unit
 ) {
-    var pdfUriString by rememberSaveable { mutableStateOf(initialPdfUri?.toString()) }
-    var lastHandledIntentUriString by rememberSaveable { mutableStateOf(initialPdfUri?.toString()) }
-
-    val pdfUri = remember(pdfUriString) { pdfUriString?.toUri() }
-
-    LaunchedEffect(initialPdfUri) {
-        val initialUriString = initialPdfUri?.toString()
-        if (initialUriString != null && initialUriString != lastHandledIntentUriString) {
-            pdfUriString = initialUriString
-            lastHandledIntentUriString = initialUriString
-        }
-    }
+    val pdfUri by viewModel.pdfUri.collectAsStateWithLifecycle()
+    val isSearching by viewModel.isSearching.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val matchCase by viewModel.matchCase.collectAsStateWithLifecycle()
+    val wholeWord by viewModel.wholeWord.collectAsStateWithLifecycle()
+    val currentMatchIndex by viewModel.currentMatchIndex.collectAsStateWithLifecycle()
+    val totalMatchCount by viewModel.totalMatchCount.collectAsStateWithLifecycle()
+    val isImmersive by viewModel.isImmersive.collectAsStateWithLifecycle()
+    val currentTitle by viewModel.currentTitle.collectAsStateWithLifecycle()
 
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
-    var isSearching by rememberSaveable { mutableStateOf(false) }
-    var searchQuery by rememberSaveable { mutableStateOf("") }
-    var matchCase by rememberSaveable { mutableStateOf(false) }
-    var wholeWord by rememberSaveable { mutableStateOf(false) }
-    var currentMatchIndex by rememberSaveable { mutableIntStateOf(0) }
-    var totalMatchCount by remember { mutableIntStateOf(0) }
-    val pdfViewerState = remember(pdfUriString) { PdfViewerState() }
+    val pdfViewerState = remember(pdfUri) { PdfViewerState() }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
-    BackHandler(enabled = pdfUriString != null || isSearching) {
+    BackHandler(enabled = pdfUri != null || isSearching) {
         if (isSearching) {
-            isSearching = false
-            searchQuery = ""
+            viewModel.setSearching(false)
         } else {
-            val uriToSave = pdfUriString
+            val uriToSave = pdfUri
             val pageToSave = pdfViewerState.firstVisiblePage
-            pdfUriString = null
+            viewModel.setUri(null)
             if (uriToSave != null) {
                 scope.launch {
                     Log.d("UltimaPDF", "BackHandler: Saving page $pageToSave for $uriToSave")
-                    PdfDataStore.saveLastPage(context, uriToSave, pageToSave)
+                    PdfDataStore.saveLastPage(context, uriToSave.toString(), pageToSave)
                 }
             }
         }
     }
 
-    var isImmersive by rememberSaveable { mutableStateOf(false) }
-    var currentTitle by rememberSaveable { mutableStateOf("UltimaPDF") }
     var fabVisible by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isImmersive, isSearching, pdfUriString, pdfViewerState.firstVisiblePage, pdfViewerState.firstVisiblePageOffset) {
-        if (pdfUriString != null && !isSearching) {
+    LaunchedEffect(isImmersive, isSearching, pdfUri, pdfViewerState.firstVisiblePage, pdfViewerState.firstVisiblePageOffset) {
+        if (pdfUri != null && !isSearching) {
             fabVisible = true
             delay(3000)
             fabVisible = false
@@ -294,19 +285,13 @@ fun MainScreen(
                                 inputField = {
                                     SearchBarDefaults.InputField(
                                         query = searchQuery,
-                                        onQueryChange = { 
-                                            searchQuery = it
-                                            currentMatchIndex = 0
-                                        },
+                                        onQueryChange = { viewModel.setSearchQuery(it) },
                                         onSearch = { /* Done via onQueryChange */ },
                                         expanded = false,
                                         onExpandedChange = { },
                                         placeholder = { Text("Search PDF...") },
                                         leadingIcon = {
-                                            IconButton(onClick = { 
-                                                isSearching = false
-                                                searchQuery = ""
-                                            }) {
+                                            IconButton(onClick = { viewModel.setSearching(false) }) {
                                                 Icon(Icons.Default.Close, contentDescription = "Close search")
                                             }
                                         },
@@ -319,19 +304,13 @@ fun MainScreen(
                                                     )
                                                 }
                                                 IconButton(
-                                                    onClick = { 
-                                                        if (currentMatchIndex > 0) currentMatchIndex--
-                                                        else currentMatchIndex = totalMatchCount - 1
-                                                    },
+                                                    onClick = { viewModel.prevMatch() },
                                                     enabled = totalMatchCount > 0
                                                 ) {
                                                     Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Previous match")
                                                 }
                                                 IconButton(
-                                                    onClick = { 
-                                                        if (currentMatchIndex < totalMatchCount - 1) currentMatchIndex++
-                                                        else currentMatchIndex = 0
-                                                    },
+                                                    onClick = { viewModel.nextMatch() },
                                                     enabled = totalMatchCount > 0
                                                 ) {
                                                     Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Next match")
@@ -352,12 +331,12 @@ fun MainScreen(
                             ) {
                                 FilterChip(
                                     selected = matchCase,
-                                    onClick = { matchCase = !matchCase },
+                                    onClick = { viewModel.setMatchCase(!matchCase) },
                                     label = { Text("Match Case") }
                                 )
                                 FilterChip(
                                     selected = wholeWord,
-                                    onClick = { wholeWord = !wholeWord },
+                                    onClick = { viewModel.setWholeWord(!wholeWord) },
                                     label = { Text("Whole Word") }
                                 )
                             }
@@ -384,15 +363,15 @@ fun MainScreen(
                             }
                         },
                         navigationIcon = {
-                            if (pdfUriString != null) {
+                            if (pdfUri != null) {
                                 IconButton(onClick = {
-                                    val uriToSave = pdfUriString
+                                    val uriToSave = pdfUri
                                     val pageToSave = pdfViewerState.firstVisiblePage
-                                    pdfUriString = null
+                                    viewModel.setUri(null)
                                     if (uriToSave != null) {
                                         scope.launch {
                                             Log.d("UltimaPDF", "TopBar: Saving page $pageToSave for $uriToSave")
-                                            PdfDataStore.saveLastPage(context, uriToSave, pageToSave)
+                                            PdfDataStore.saveLastPage(context, uriToSave.toString(), pageToSave)
                                         }
                                     }
                                 }) {
@@ -401,8 +380,8 @@ fun MainScreen(
                             }
                         },
                         actions = {
-                            if (pdfUriString != null) {
-                                IconButton(onClick = { isSearching = true }) {
+                            if (pdfUri != null) {
+                                IconButton(onClick = { viewModel.setSearching(true) }) {
                                     Icon(Icons.Default.Search, contentDescription = "Search")
                                 }
                             }
@@ -438,20 +417,12 @@ fun MainScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
         NativePdfReaderScreen(
-            pdfUri = pdfUri,
-            onPdfUriChange = { pdfUriString = it?.toString() },
+            viewModel = viewModel,
             modifier = Modifier.fillMaxSize(),
             contentPadding = if (isImmersive) PaddingValues(0.dp) else PaddingValues(top = innerPadding.calculateTopPadding()),
             scrollBehavior = scrollBehavior,
             viewMode = viewMode,
             pageGap = pageGap,
-            searchQuery = searchQuery,
-            matchCase = matchCase,
-            wholeWord = wholeWord,
-            currentMatchIndex = currentMatchIndex,
-            onTotalMatchCountChange = { totalMatchCount = it },
-            onToggleImmersive = { isImmersive = !isImmersive },
-            onTitleChange = { currentTitle = it },
             pdfViewerState = pdfViewerState
         )
     }

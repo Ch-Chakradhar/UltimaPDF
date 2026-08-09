@@ -1,11 +1,10 @@
 package com.example.ultimapdf
 
-import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.provider.OpenableColumns
+import kotlin.math.abs
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.fadeIn
@@ -64,6 +63,7 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.withSaveLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -75,28 +75,23 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.createBitmap
 import androidx.core.net.toUri
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.pdf.Highlight
-import androidx.pdf.PdfDocument
 import androidx.pdf.PdfPoint
 import androidx.pdf.PdfRect
-import androidx.pdf.SandboxedPdfLoader
 import androidx.pdf.compose.FastScrollConfiguration
 import androidx.pdf.compose.PdfViewer
 import androidx.pdf.compose.PdfViewerState
-import androidx.pdf.content.PageMatchBounds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import android.util.Log
-import kotlin.time.Duration.Companion.milliseconds
 
 private fun getFileName(context: android.content.Context, uri: Uri): String {
     var result: String? = null
     try {
         if (uri.scheme == "content") {
-            // Using a cursor can sometimes throw SecurityException if permission is lost
             val cursor = try {
                 context.contentResolver.query(uri, null, null, null, null)
             } catch (e: SecurityException) {
@@ -179,70 +174,50 @@ fun PdfThumbnail(uri: Uri, modifier: Modifier = Modifier) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NativePdfReaderScreen(
+    viewModel: PdfViewModel,
     modifier: Modifier = Modifier,
-    pdfUri: Uri? = null,
-    onPdfUriChange: (Uri?) -> Unit = {},
     contentPadding: PaddingValues = PaddingValues(0.dp),
     scrollBehavior: TopAppBarScrollBehavior? = null,
     viewMode: PdfViewMode = PdfViewMode.NORMAL,
     pageGap: Int = 8,
-    searchQuery: String = "",
-    matchCase: Boolean = false,
-    wholeWord: Boolean = false,
-    currentMatchIndex: Int = 0,
-    onTotalMatchCountChange: (Int) -> Unit = {},
-    onToggleImmersive: () -> Unit = {},
-    onTitleChange: (String) -> Unit = {},
     pdfViewerState: PdfViewerState = remember { PdfViewerState() }
 ) {
     val context = LocalContext.current
+    val pdfUri by viewModel.pdfUri.collectAsStateWithLifecycle()
+    val pdfDocument by viewModel.pdfDocument.collectAsStateWithLifecycle()
+    val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
+    val currentMatchIndex by viewModel.currentMatchIndex.collectAsStateWithLifecycle()
+    val persistedPage by viewModel.persistedPage.collectAsStateWithLifecycle()
+    val persistedZoom by viewModel.persistedZoom.collectAsStateWithLifecycle()
+    val isRestoring by viewModel.isRestoring.collectAsStateWithLifecycle()
+    val isImmersive by viewModel.isImmersive.collectAsStateWithLifecycle()
+    
+    var controlsVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isImmersive, pdfUri) {
+        if (pdfUri == null || isImmersive) {
+            controlsVisible = false
+        } else {
+            snapshotFlow { Pair(pdfViewerState.firstVisiblePage, pdfViewerState.firstVisiblePageOffset) }
+                .collectLatest {
+                    controlsVisible = true
+                    delay(3000)
+                    controlsVisible = false
+                }
+        }
+    }
     
     val recentFiles by PdfDataStore.getRecentFiles(context).collectAsState(initial = emptyList())
 
-    LaunchedEffect(pdfUri) {
-        val name = pdfUri?.let { getFileName(context, it) } ?: "UltimaPDF"
-        onTitleChange(name)
-        
-        pdfUri?.let { uri ->
-            try {
-                val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                context.contentResolver.takePersistableUriPermission(uri, takeFlags)
-            } catch (_: Exception) {
-            }
-            PdfDataStore.addRecentFile(context, uri.toString())
-        }
-    }
+    val currentMatchColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f).toArgb()
+    val otherMatchColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f).toArgb()
 
-    // 1. File picker to select a PDF
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
-        onResult = { uri -> onPdfUriChange(uri) }
+        onResult = { uri -> viewModel.setUri(uri) }
     )
 
-    // 2. Initialize the sandboxed loader and state
-    val pdfLoader = remember { SandboxedPdfLoader(context.applicationContext) }
-
-    // Persist viewer state (page and zoom) across rotations, keyed by URI string to reset on new file
-    val uriString = remember(pdfUri) { pdfUri?.toString() }
-    var persistedPage by rememberSaveable(uriString) { mutableIntStateOf(-1) }
-    var persistedZoom by rememberSaveable(uriString) { mutableFloatStateOf(1f) }
-    var isDataStoreLoading by remember(pdfUri) { mutableStateOf(pdfUri != null) }
-    var isRestoring by remember(pdfUri) { mutableStateOf(true) }
     var viewportSize by remember { mutableStateOf(IntSize.Zero) }
-
-    // Load last opened page from DataStore when URI changes
-    LaunchedEffect(pdfUri) {
-        pdfUri?.let { uri ->
-            val savedPage = PdfDataStore.getLastPage(context, uri.toString()).first()
-            if (savedPage != -1 && persistedPage == -1) {
-                persistedPage = savedPage
-            }
-            isDataStoreLoading = false
-        } ?: run { 
-            isDataStoreLoading = false
-            isRestoring = false
-        }
-    }
 
     LaunchedEffect(pdfViewerState, pdfUri, viewportSize) {
         snapshotFlow { 
@@ -257,18 +232,10 @@ fun NativePdfReaderScreen(
         }
             .distinctUntilChanged()
             .collect { (page, zoom) ->
-                if (!isRestoring) {
-                    Log.d("UltimaPDF", "PDFComp: Continuous save page $page")
-                    persistedPage = page
-                    persistedZoom = zoom
-                    pdfUri?.let { uri ->
-                        PdfDataStore.saveLastPage(context, uri.toString(), page)
-                    }
-                }
+                viewModel.onPageChanged(page, zoom)
             }
     }
 
-    // 3. Fast scroll configuration to ensure the slider is visible and accessible
     val fastScrollConfig = remember {
         FastScrollConfiguration.withDrawableIdsAndDp(
             fastScrollVerticalThumbDrawableRes = R.drawable.custom_scroll_thumb,
@@ -278,7 +245,15 @@ fun NativePdfReaderScreen(
         )
     }
 
-    // Manual sync for TopAppBar since PdfViewer might not support nested scrolling correctly
+    val hiddenFastScrollConfig = remember {
+        FastScrollConfiguration.withDrawableIdsAndDp(
+            fastScrollVerticalThumbDrawableRes = R.drawable.custom_scroll_thumb,
+            fastScrollPageIndicatorBackgroundDrawableRes = R.drawable.custom_indicator_background,
+            fastScrollVerticalThumbMarginEnd = (-100).dp,
+            fastScrollPageIndicatorMarginEnd = (-100).dp
+        )
+    }
+
     if (scrollBehavior != null) {
         var lastPage by rememberSaveable { mutableIntStateOf(0) }
         var lastOffsetY by rememberSaveable { mutableFloatStateOf(0f) }
@@ -288,103 +263,36 @@ fun NativePdfReaderScreen(
                 .collect { (currentPage, currentOffset) ->
                     if (currentPage == lastPage) {
                         val deltaY = currentOffset.y - lastOffsetY
-                        if (deltaY != 0f) {
+                        // Ignore micro-jitter (sub-pixel movements) to prevent constant layout refreshes
+                        if (abs(deltaY) > 0.5f) {
                             scrollBehavior.state.heightOffset = (scrollBehavior.state.heightOffset + deltaY).coerceIn(
                                 scrollBehavior.state.heightOffsetLimit, 0f
                             )
                             scrollBehavior.state.contentOffset -= deltaY
+                            lastOffsetY = currentOffset.y
                         }
+                    } else {
+                        lastPage = currentPage
+                        lastOffsetY = currentOffset.y
                     }
-                    lastPage = currentPage
-                    lastOffsetY = currentOffset.y
                 }
         }
     }
 
-    // 3. Load the document asynchronously when the URI changes
-    val pdfDocument by produceState<PdfDocument?>(initialValue = null, key1 = pdfUri) {
-        value = pdfUri?.let { uri ->
-            try {
-                withContext(Dispatchers.IO) {
-                    pdfLoader.openDocument(uri)
-                }
-            } catch (e: SecurityException) {
-                e.printStackTrace()
-                null
-            } catch (e: Exception) {
-                e.printStackTrace()
-                null
-            }
-        }
-    }
-
-    // Restore viewer state when document is loaded and DataStore has been checked
-    LaunchedEffect(pdfDocument, isDataStoreLoading) {
-        if (pdfDocument != null && !isDataStoreLoading) {
+    LaunchedEffect(pdfDocument, isRestoring) {
+        if (pdfDocument != null && isRestoring) {
             val pageToScroll = if (persistedPage == -1) 0 else persistedPage
             pdfViewerState.scrollToPage(pageToScroll)
             pdfViewerState.zoomScroll {
                 zoomTo(persistedZoom)
             }
-            // Give some time for the viewer to settle before allowing saves
-            delay(200.milliseconds)
-            isRestoring = false
+            viewModel.markRestored()
         }
     }
 
-    data class SearchResult(val pageNum: Int, val match: PageMatchBounds)
-
-    var searchResults by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
-
-    LaunchedEffect(pdfDocument, searchQuery, matchCase, wholeWord) {
-        val doc = pdfDocument
-        if (doc != null && searchQuery.length >= 3) {
-            val results = doc.searchDocument(searchQuery, 0 until doc.pageCount)
-            val flattenedResults = mutableListOf<SearchResult>()
-            for (i in 0 until results.size()) {
-                val pageNum = results.keyAt(i)
-                val matches = results.valueAt(i)
-                
-                val pageContent = doc.getPageContent(pageNum)
-                val pageText = pageContent?.textContents?.joinToString("") { it.text } ?: ""
-
-                matches.forEach { match ->
-                    val start = match.textStartIndex
-                    val length = searchQuery.length
-                    
-                    if (start + length <= pageText.length) {
-                        val textSegment = pageText.substring(start, start + length)
-                        
-                        val caseValid = if (matchCase) textSegment == searchQuery else true
-                        val wordValid = if (wholeWord) {
-                            val before = if (start > 0) pageText[start - 1] else ' '
-                            val after = if (start + length < pageText.length) pageText[start + length] else ' '
-                            !before.isLetterOrDigit() && !after.isLetterOrDigit()
-                        } else true
-                        
-                        if (caseValid && wordValid) {
-                            flattenedResults.add(SearchResult(pageNum, match))
-                        }
-                    }
-                }
-            }
-            searchResults = flattenedResults
-            onTotalMatchCountChange(flattenedResults.size)
-        } else {
-            searchResults = emptyList()
-            onTotalMatchCountChange(0)
-        }
-    }
-
-    LaunchedEffect(searchResults, currentMatchIndex) {
+    LaunchedEffect(searchResults, currentMatchIndex, currentMatchColor, otherMatchColor) {
         val highlights = searchResults.flatMapIndexed { index, result ->
-            val color =
-                if (index == currentMatchIndex) Color.argb(128, 255, 165, 0) else Color.argb(
-                    128,
-                    255,
-                    255,
-                    0
-                )
+            val color = if (index == currentMatchIndex) currentMatchColor else otherMatchColor
             result.match.bounds.map { rect ->
                 Highlight(PdfRect(result.pageNum, rect), color)
             }
@@ -450,7 +358,7 @@ fun NativePdfReaderScreen(
                             val uri = remember(uriString) { uriString.toUri() }
                             val fileName = remember(uriString) { getFileName(context, uri) }
                             ElevatedCard(
-                                onClick = { onPdfUriChange(uri) },
+                                onClick = { viewModel.setUri(uri) },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(
@@ -491,7 +399,6 @@ fun NativePdfReaderScreen(
             }
         }
 
-        // 4. Render the PDF
         if (pdfUri != null && pdfDocument != null) {
             Box(modifier = Modifier.weight(1f)) {
                 PdfViewer(
@@ -502,9 +409,12 @@ fun NativePdfReaderScreen(
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false)
                                 val up = waitForUpOrCancellation()
-                                // If it was a quick tap and not consumed by others (like selection handles)
                                 if (up != null && (up.uptimeMillis - down.uptimeMillis) < 200) {
-                                    onToggleImmersive()
+                                    if (!controlsVisible && !isImmersive) {
+                                        controlsVisible = true
+                                    } else {
+                                        viewModel.toggleImmersive()
+                                    }
                                 }
                             }
                         }
@@ -519,14 +429,11 @@ fun NativePdfReaderScreen(
                     state = pdfViewerState,
                     verticalPageSpacing = pageGap.dp,
                     contentPadding = contentPadding,
-                    fastScrollConfig = fastScrollConfig,
-                    isImageSelectionEnabled = true,
-                    isFormFillingEnabled = true
+                    fastScrollConfig = if (controlsVisible) fastScrollConfig else hiddenFastScrollConfig,
                 )
 
-                // Floating Page Indicator
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = (pdfDocument?.pageCount ?: 0) > 0,
+                    visible = controlsVisible && (pdfDocument?.pageCount ?: 0) > 0,
                     enter = fadeIn(),
                     exit = fadeOut(),
                     modifier = Modifier
@@ -534,12 +441,12 @@ fun NativePdfReaderScreen(
                         .padding(bottom = 32.dp)
                 ) {
                     Surface(
-                        color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f),
+                        color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.7f),
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Text(
                             text = "${pdfViewerState.firstVisiblePage + 1} / ${pdfDocument?.pageCount ?: 0}",
-                            color = androidx.compose.ui.graphics.Color.White,
+                            color = MaterialTheme.colorScheme.inverseOnSurface,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelLarge
                         )

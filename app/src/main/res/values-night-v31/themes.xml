@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.UltimaPDF" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Use system dynamic colors on Android 12+ (Dark Mode) -->
+        <item name="colorPrimary">@android:color/system_accent1_200</item>
+        <item name="colorControlActivated">?attr/colorPrimary</item>
+    </style>
+</resources>

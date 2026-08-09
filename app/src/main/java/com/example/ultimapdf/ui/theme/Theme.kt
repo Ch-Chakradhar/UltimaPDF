@@ -1,8 +1,9 @@
 package com.example.ultimapdf.ui.theme
 
-import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -52,7 +53,15 @@ fun UltimaPDFTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+        typography = Typography
+    ) {
+        val selectionColors = TextSelectionColors(
+            handleColor = colorScheme.primary,
+            backgroundColor = colorScheme.primary.copy(alpha = 0.4f)
+        )
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalTextSelectionColors provides selectionColors,
+            content = content
+        )
+    }
 }
