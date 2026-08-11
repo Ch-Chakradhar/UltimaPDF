@@ -36,8 +36,6 @@ androidx-pdf-document-service = { group = "androidx.pdf", name = "pdf-document-s
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
-androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
-
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

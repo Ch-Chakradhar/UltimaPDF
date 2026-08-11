@@ -8,12 +8,11 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -84,7 +83,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
     private val viewModel: PdfViewModel by viewModels()
 
     override fun onNewIntent(intent: Intent) {
@@ -130,15 +129,6 @@ class MainActivity : AppCompatActivity() {
         setContent {
             val context = this@MainActivity
             val appTheme by PdfDataStore.getAppTheme(context).collectAsState(initial = AppTheme.SYSTEM_DEFAULT)
-            
-            LaunchedEffect(appTheme) {
-                val mode = when (appTheme) {
-                    AppTheme.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
-                    AppTheme.DARK -> AppCompatDelegate.MODE_NIGHT_YES
-                    AppTheme.SYSTEM_DEFAULT -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
-                }
-                AppCompatDelegate.setDefaultNightMode(mode)
-            }
 
             val darkTheme = when (appTheme) {
                 AppTheme.LIGHT -> false
