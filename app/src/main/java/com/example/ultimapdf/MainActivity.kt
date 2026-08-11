@@ -6,13 +6,14 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
-import androidx.activity.viewModels
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -57,11 +58,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,20 +71,20 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.IntentCompat
-import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import android.util.Log
 import androidx.pdf.compose.PdfViewerState
 import com.example.ultimapdf.ui.theme.UltimaPDFTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     private val viewModel: PdfViewModel by viewModels()
 
     override fun onNewIntent(intent: Intent) {
@@ -132,6 +131,15 @@ class MainActivity : ComponentActivity() {
             val context = this@MainActivity
             val appTheme by PdfDataStore.getAppTheme(context).collectAsState(initial = AppTheme.SYSTEM_DEFAULT)
             
+            LaunchedEffect(appTheme) {
+                val mode = when (appTheme) {
+                    AppTheme.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
+                    AppTheme.DARK -> AppCompatDelegate.MODE_NIGHT_YES
+                    AppTheme.SYSTEM_DEFAULT -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+                }
+                AppCompatDelegate.setDefaultNightMode(mode)
+            }
+
             val darkTheme = when (appTheme) {
                 AppTheme.LIGHT -> false
                 AppTheme.DARK -> true
@@ -237,10 +245,10 @@ fun MainScreen(
 
     var fabVisible by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isImmersive, isSearching, pdfUri, pdfViewerState.firstVisiblePage, pdfViewerState.firstVisiblePageOffset) {
+    LaunchedEffect(isSearching, pdfUri, pdfViewerState.firstVisiblePage) {
         if (pdfUri != null && !isSearching) {
             fabVisible = true
-            delay(3000)
+            delay(2000.milliseconds)
             fabVisible = false
         } else {
             fabVisible = false

@@ -32,14 +32,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -69,6 +72,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
@@ -87,6 +91,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.milliseconds
 
 private fun getFileName(context: android.content.Context, uri: Uri): String {
     var result: String? = null
@@ -191,6 +196,8 @@ fun NativePdfReaderScreen(
     val persistedZoom by viewModel.persistedZoom.collectAsStateWithLifecycle()
     val isRestoring by viewModel.isRestoring.collectAsStateWithLifecycle()
     val isImmersive by viewModel.isImmersive.collectAsStateWithLifecycle()
+    val passwordRequired by viewModel.passwordRequired.collectAsStateWithLifecycle()
+    val isPasswordIncorrect by viewModel.isPasswordIncorrect.collectAsStateWithLifecycle()
     
     var controlsVisible by remember { mutableStateOf(false) }
 
@@ -201,7 +208,7 @@ fun NativePdfReaderScreen(
             snapshotFlow { Pair(pdfViewerState.firstVisiblePage, pdfViewerState.firstVisiblePageOffset) }
                 .collectLatest {
                     controlsVisible = true
-                    delay(3000)
+                    delay(2000.milliseconds)
                     controlsVisible = false
                 }
         }
@@ -265,7 +272,7 @@ fun NativePdfReaderScreen(
                         val deltaY = currentOffset.y - lastOffsetY
                         // Ignore micro-jitter (sub-pixel movements) to prevent constant layout refreshes
                         if (abs(deltaY) > 0.5f) {
-                            scrollBehavior.state.heightOffset = (scrollBehavior.state.heightOffset + deltaY).coerceIn(
+                            scrollBehavior.state.heightOffset = (scrollBehavior.state.heightOffset + 2*deltaY).coerceIn(
                                 scrollBehavior.state.heightOffsetLimit, 0f
                             )
                             scrollBehavior.state.contentOffset -= deltaY
@@ -399,6 +406,14 @@ fun NativePdfReaderScreen(
             }
         }
 
+        if (passwordRequired) {
+            PasswordDialog(
+                isIncorrect = isPasswordIncorrect,
+                onConfirm = { viewModel.retryWithPassword(it) },
+                onDismiss = { viewModel.setUri(null) }
+            )
+        }
+
         if (pdfUri != null && pdfDocument != null) {
             Box(modifier = Modifier.weight(1f)) {
                 PdfViewer(
@@ -501,4 +516,49 @@ fun Modifier.applyPdfViewMode(mode: PdfViewMode): Modifier = when (mode) {
             }
         }
     }
+}
+
+@Composable
+fun PasswordDialog(
+    isIncorrect: Boolean,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var password by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Password Required") },
+        text = {
+            Column {
+                Text("This PDF is password protected. Please enter the password to open it.")
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = isIncorrect,
+                    supportingText = if (isIncorrect) {
+                        { Text("Incorrect password. Please try again.", color = MaterialTheme.colorScheme.error) }
+                    } else null
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(password) },
+                enabled = password.isNotBlank()
+            ) {
+                Text("Open")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

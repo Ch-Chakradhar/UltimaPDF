@@ -4,12 +4,10 @@ import android.app.Application
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.pdf.PdfDocument
+import androidx.pdf.PdfPasswordException
 import androidx.pdf.SandboxedPdfLoader
 import androidx.pdf.content.PageMatchBounds
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +19,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.core.util.size
+import kotlin.time.Duration.Companion.milliseconds
 
 data class SearchResult(val pageNum: Int, val match: PageMatchBounds)
 
@@ -70,6 +70,12 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     private val _isRestoring = MutableStateFlow(true)
     val isRestoring: StateFlow<Boolean> = _isRestoring.asStateFlow()
 
+    private val _passwordRequired = MutableStateFlow(false)
+    val passwordRequired: StateFlow<Boolean> = _passwordRequired.asStateFlow()
+
+    private val _isPasswordIncorrect = MutableStateFlow(false)
+    val isPasswordIncorrect: StateFlow<Boolean> = _isPasswordIncorrect.asStateFlow()
+
     init {
         viewModelScope.launch {
             _pdfUri.collectLatest { uri ->
@@ -103,6 +109,8 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         _persistedZoom.value = 1f
         _searchQuery.value = ""
         _isSearching.value = false
+        _passwordRequired.value = false
+        _isPasswordIncorrect.value = false
         
         if (uri != null) {
             viewModelScope.launch {
@@ -124,16 +132,34 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun loadDocument(uri: Uri) {
+    private suspend fun loadDocument(uri: Uri, password: String? = null) {
         _currentTitle.value = getFileName(context, uri)
         try {
             val doc = withContext(Dispatchers.IO) {
-                pdfLoader.openDocument(uri)
+                if (password != null) {
+                    pdfLoader.openDocument(uri, password)
+                } else {
+                    pdfLoader.openDocument(uri)
+                }
             }
             _pdfDocument.value = doc
+            _passwordRequired.value = false
+            _isPasswordIncorrect.value = false
+        } catch (e: PdfPasswordException) {
+            Log.w("PdfViewModel", "Password required or incorrect password", e)
+            _passwordRequired.value = true
+            _isPasswordIncorrect.value = password != null
+            _pdfDocument.value = null
         } catch (e: Exception) {
             Log.e("PdfViewModel", "Error loading document", e)
             _pdfDocument.value = null
+        }
+    }
+
+    fun retryWithPassword(password: String) {
+        val uri = _pdfUri.value ?: return
+        viewModelScope.launch {
+            loadDocument(uri, password)
         }
     }
 
@@ -147,7 +173,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
             val flattenedResults = mutableListOf<SearchResult>()
             
             // Extract text contents for case/word validation if needed
-            for (i in 0 until results.size()) {
+            for (i in 0 until results.size) {
                 val pageNum = results.keyAt(i)
                 val matches = results.valueAt(i)
                 
@@ -237,7 +263,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     fun markRestored() {
         viewModelScope.launch {
-            delay(200) // Small delay to let viewer settle
+            delay(200.milliseconds) // Small delay to let viewer settle
             _isRestoring.value = false
         }
     }

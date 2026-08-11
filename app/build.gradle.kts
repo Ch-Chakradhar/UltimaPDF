@@ -15,16 +15,20 @@ android {
     namespace = "com.example.ultimapdf"
     compileSdk {
         version = release(37)
+        compileSdkExtension = 13
     }
 
     defaultConfig {
         applicationId = "com.example.ultimapdf"
-        minSdk = 28
+        minSdk = 30
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    androidResources {
+        localeFilters += "en"
     }
 
     signingConfigs {
@@ -70,6 +74,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.pdf.document.service)
     implementation(libs.androidx.datastore.preferences)
