@@ -317,7 +317,8 @@ fun NativePdfReaderScreen(
 
     Column(
         modifier = modifier
-            .fillMaxSize(),
+            .fillMaxSize()
+            .padding(contentPadding),
         verticalArrangement = if (pdfDocument == null && pdfUri == null) Arrangement.Top else Arrangement.Center
     ) {
         if (pdfDocument == null && pdfUri == null){
@@ -469,7 +470,14 @@ fun NativePdfReaderScreen(
                 }
             }
         } else if (pdfUri != null) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
         }
     }
 }

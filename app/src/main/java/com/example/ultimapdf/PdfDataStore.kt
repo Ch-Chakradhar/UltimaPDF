@@ -2,6 +2,7 @@ package com.example.ultimapdf
 
 import android.content.Context
 import android.content.res.Configuration
+import android.net.Uri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.map
 
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.catch
+import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 
@@ -55,7 +57,32 @@ object PdfDataStore {
             
             // Limit to 10 recent files
             val limitedList = currentList.take(10)
+            val removedFiles = currentList.drop(10)
+            
             preferences[RECENT_FILES] = limitedList.joinToString(",")
+
+            // Cleanup removed files if they were internal copies
+            removedFiles.forEach { uriString ->
+                try {
+                    val uri = Uri.parse(uriString)
+                    if (uri.scheme == "file") {
+                        val file = File(uri.path ?: return@forEach)
+                        // Check if file is in our internal temp_pdfs directory
+                        val internalDir = File(context.filesDir, "temp_pdfs")
+                        if (file.absolutePath.startsWith(internalDir.absolutePath)) {
+                            // Delete the file and its parent hash directory if it's empty
+                            file.delete()
+                            file.parentFile?.let { parent ->
+                                if (parent.listFiles()?.isEmpty() == true) {
+                                    parent.delete()
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         }
     }
 
@@ -130,8 +157,8 @@ object PdfDataStore {
         }
     }
 
-    fun getLastPage(context: Context, pdfUri: String): Flow<Int> {
-        val key = intPreferencesKey("page_" + getSafeKey(pdfUri))
+    fun getLastPage(context: Context, identifier: String): Flow<Int> {
+        val key = intPreferencesKey("page_" + getSafeKey(identifier))
         return context.dataStore.data
             .catch { exception ->
                 if (exception is IOException) {
@@ -145,8 +172,8 @@ object PdfDataStore {
             }
     }
 
-    suspend fun saveLastPage(context: Context, pdfUri: String, page: Int) {
-        val key = intPreferencesKey("page_" + getSafeKey(pdfUri))
+    suspend fun saveLastPage(context: Context, identifier: String, page: Int) {
+        val key = intPreferencesKey("page_" + getSafeKey(identifier))
         context.dataStore.edit { preferences ->
             preferences[key] = page
         }

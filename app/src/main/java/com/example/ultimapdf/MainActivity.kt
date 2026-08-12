@@ -221,15 +221,7 @@ fun MainScreen(
         if (isSearching) {
             viewModel.setSearching(false)
         } else {
-            val uriToSave = pdfUri
-            val pageToSave = pdfViewerState.firstVisiblePage
             viewModel.setUri(null)
-            if (uriToSave != null) {
-                scope.launch {
-                    Log.d("UltimaPDF", "BackHandler: Saving page $pageToSave for $uriToSave")
-                    PdfDataStore.saveLastPage(context, uriToSave.toString(), pageToSave)
-                }
-            }
         }
     }
 
@@ -253,15 +245,10 @@ fun MainScreen(
         window?.let { WindowCompat.getInsetsController(it, it.decorView) }
     }
 
-    LaunchedEffect(isImmersive) {
+    LaunchedEffect(Unit) {
         windowInsetsController?.let { controller ->
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            if (isImmersive) {
-                controller.hide(WindowInsetsCompat.Type.systemBars())
-            } else {
-                controller.show(WindowInsetsCompat.Type.navigationBars())
-                controller.hide(WindowInsetsCompat.Type.statusBars())
-            }
+            controller.hide(WindowInsetsCompat.Type.systemBars())
         }
     }
 
@@ -363,15 +350,7 @@ fun MainScreen(
                         navigationIcon = {
                             if (pdfUri != null) {
                                 IconButton(onClick = {
-                                    val uriToSave = pdfUri
-                                    val pageToSave = pdfViewerState.firstVisiblePage
                                     viewModel.setUri(null)
-                                    if (uriToSave != null) {
-                                        scope.launch {
-                                            Log.d("UltimaPDF", "TopBar: Saving page $pageToSave for $uriToSave")
-                                            PdfDataStore.saveLastPage(context, uriToSave.toString(), pageToSave)
-                                        }
-                                    }
                                 }) {
                                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                                 }
@@ -411,13 +390,12 @@ fun MainScreen(
                     Icon(Icons.Default.ScreenRotation, contentDescription = "Rotate Screen")
                 }
             }
-        },
-        contentWindowInsets = WindowInsets(0, 0, 0, 0)
+        }
     ) { innerPadding ->
         NativePdfReaderScreen(
             viewModel = viewModel,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = if (isImmersive) PaddingValues(0.dp) else PaddingValues(top = innerPadding.calculateTopPadding()),
+            contentPadding = PaddingValues(bottom = innerPadding.calculateBottomPadding()),
             scrollBehavior = scrollBehavior,
             viewMode = viewMode,
             pageGap = pageGap,

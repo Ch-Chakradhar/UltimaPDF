@@ -61,6 +61,9 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentTitle = MutableStateFlow("UltimaPDF")
     val currentTitle: StateFlow<String> = _currentTitle.asStateFlow()
 
+    private val _fileHash = MutableStateFlow<String?>(null)
+    val fileHash: StateFlow<String?> = _fileHash.asStateFlow()
+
     private val _persistedPage = MutableStateFlow(-1)
     val persistedPage: StateFlow<Int> = _persistedPage.asStateFlow()
 
@@ -103,37 +106,77 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setUri(uri: Uri?) {
         if (_pdfUri.value == uri) return
-        _pdfUri.value = uri
-        _isRestoring.value = true
-        _persistedPage.value = -1
-        _persistedZoom.value = 1f
-        _searchQuery.value = ""
-        _isSearching.value = false
-        _passwordRequired.value = false
-        _isPasswordIncorrect.value = false
         
-        if (uri != null) {
-            viewModelScope.launch {
-                val savedPage = PdfDataStore.getLastPage(context, uri.toString()).first()
-                if (savedPage != -1) {
-                    _persistedPage.value = savedPage
-                }
+        viewModelScope.launch {
+            if (uri == null) {
+                _pdfUri.value = null
+                _fileHash.value = null
+                _isRestoring.value = true
+                _persistedPage.value = -1
+                _persistedZoom.value = 1f
+                _searchQuery.value = ""
+                _isSearching.value = false
+                _passwordRequired.value = false
+                _isPasswordIncorrect.value = false
+                return@launch
             }
+
+            val originalFileName = getFileName(context, uri)
+            val hash = withContext(Dispatchers.IO) { FileUtil.calculateFileHash(context, uri) }
+            _fileHash.value = hash
+            
+            var targetUri = uri
+            var isTemporary = false
             
             // Try to take persistable URI permission
             try {
-                val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                context.contentResolver.takePersistableUriPermission(uri, takeFlags)
-            } catch (_: Exception) {}
+                if (uri.scheme == "content") {
+                    val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    context.contentResolver.takePersistableUriPermission(uri, takeFlags)
+                }
+            } catch (_: Exception) {
+                isTemporary = true
+            }
+
+            val fileSize = withContext(Dispatchers.IO) { FileUtil.getFileSize(context, uri) }
+            val fiveMB = 5 * 1024 * 1024L
             
-            viewModelScope.launch {
-                PdfDataStore.addRecentFile(context, uri.toString())
+            var wasCopied = false
+            if (isTemporary && fileSize < fiveMB && hash != null) {
+                val copiedUri = withContext(Dispatchers.IO) { 
+                    FileUtil.copyFileToInternal(context, uri, hash, originalFileName) 
+                }
+                if (copiedUri != null) {
+                    targetUri = copiedUri
+                    wasCopied = true
+                }
+            }
+
+            _pdfUri.value = targetUri
+            _currentTitle.value = originalFileName
+            _isRestoring.value = true
+            _persistedPage.value = -1
+            _persistedZoom.value = 1f
+            _searchQuery.value = ""
+            _isSearching.value = false
+            _passwordRequired.value = false
+            _isPasswordIncorrect.value = false
+
+            // Restore progress based on hash (preferred) or URI
+            val identifier = hash ?: targetUri.toString()
+            val savedPage = PdfDataStore.getLastPage(context, identifier).first()
+            if (savedPage != -1) {
+                _persistedPage.value = savedPage
+            }
+
+            // Add to recent files if NOT temporary OR if it was successfully copied
+            if (!isTemporary || wasCopied) {
+                PdfDataStore.addRecentFile(context, targetUri.toString())
             }
         }
     }
 
     private suspend fun loadDocument(uri: Uri, password: String? = null) {
-        _currentTitle.value = getFileName(context, uri)
         try {
             val doc = withContext(Dispatchers.IO) {
                 if (password != null) {
@@ -244,18 +287,16 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         _isImmersive.value = !_isImmersive.value
     }
 
-    fun setImmersive(immersive: Boolean) {
-        _isImmersive.value = immersive
-    }
-
     fun onPageChanged(page: Int, zoom: Float) {
         if (!_isRestoring.value) {
             _persistedPage.value = page
             _persistedZoom.value = zoom
+            val hash = _fileHash.value
             val uri = _pdfUri.value
-            if (uri != null) {
+            val identifier = hash ?: uri?.toString()
+            if (identifier != null) {
                 viewModelScope.launch {
-                    PdfDataStore.saveLastPage(context, uri.toString(), page)
+                    PdfDataStore.saveLastPage(context, identifier, page)
                 }
             }
         }
