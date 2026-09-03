@@ -5,7 +5,7 @@ The only PDF Reader that you will ever need. Built with the `androidx/pdf` libra
 No ads, fully open source.
 
 > [!WARNING]
-> *androidx/pdf* is still in alpha and *alpha:1.0.0-alpha19* was used to create this. The API might change and be incompatible with newer versions unless updated.
+> *androidx/pdf* is still in Beta and *1.0.0-beta01* was used to create this. The API might change and be incompatible with newer versions unless updated.
 
 This project was initially built only for myself, but I thought this might be useful for others too.
 
