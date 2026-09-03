@@ -60,6 +60,9 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     private val _isImmersive = MutableStateFlow(false)
     val isImmersive: StateFlow<Boolean> = _isImmersive.asStateFlow()
 
+    private val _isTopBarVisible = MutableStateFlow(true)
+    val isTopBarVisible: StateFlow<Boolean> = _isTopBarVisible.asStateFlow()
+
     private val _currentTitle = MutableStateFlow("UltimaPDF")
     val currentTitle: StateFlow<String> = _currentTitle.asStateFlow()
 
@@ -161,6 +164,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
             _persistedZoom.value = 1f
             _searchQuery.value = ""
             _isSearching.value = false
+            _isTopBarVisible.value = true
             _passwordRequired.value = false
             _isPasswordIncorrect.value = false
 
@@ -256,8 +260,16 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSearching(searching: Boolean) {
         _isSearching.value = searching
-        if (!searching) {
+        if (searching) {
+            _isTopBarVisible.value = true
+        } else {
             _searchQuery.value = ""
+        }
+    }
+
+    fun setTopBarVisible(visible: Boolean) {
+        if (!_isSearching.value) {
+            _isTopBarVisible.value = visible
         }
     }
 

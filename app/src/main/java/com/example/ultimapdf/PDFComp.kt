@@ -6,7 +6,6 @@ import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.provider.OpenableColumns
-import kotlin.math.abs
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.fadeIn
@@ -45,7 +44,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -184,7 +182,6 @@ fun NativePdfReaderScreen(
     viewModel: PdfViewModel,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
-    scrollBehavior: TopAppBarScrollBehavior? = null,
     viewMode: PdfViewMode = PdfViewMode.NORMAL,
     pageGap: Int = 8,
     pdfViewerState: PdfViewerState = remember { PdfViewerState() },
@@ -264,29 +261,46 @@ fun NativePdfReaderScreen(
         )
     }
 
-    if (scrollBehavior != null) {
-        var lastPage by rememberSaveable { mutableIntStateOf(0) }
-        var lastOffsetY by rememberSaveable { mutableFloatStateOf(0f) }
+    var lastPage by rememberSaveable { mutableIntStateOf(0) }
+    var lastOffsetY by rememberSaveable { mutableFloatStateOf(0f) }
+    var scrollAccumulator by remember { mutableFloatStateOf(0f) }
 
-        LaunchedEffect(pdfViewerState) {
-            snapshotFlow { Pair(pdfViewerState.firstVisiblePage, pdfViewerState.firstVisiblePageOffset) }
-                .collect { (currentPage, currentOffset) ->
-                    if (currentPage == lastPage) {
-                        val deltaY = currentOffset.y - lastOffsetY
-                        // Ignore micro-jitter (sub-pixel movements) to prevent constant layout refreshes
-                        if (abs(deltaY) > 0.5f) {
-                            scrollBehavior.state.heightOffset = (scrollBehavior.state.heightOffset + 2*deltaY).coerceIn(
-                                scrollBehavior.state.heightOffsetLimit, 0f
-                            )
-//                            scrollBehavior.state.contentOffset += 2*deltaY
-                            lastOffsetY = currentOffset.y
-                        }
-                    } else {
-                        lastPage = currentPage
-                        lastOffsetY = currentOffset.y
+    LaunchedEffect(pdfViewerState, pdfUri) {
+        snapshotFlow { Pair(pdfViewerState.firstVisiblePage, pdfViewerState.firstVisiblePageOffset) }
+            .collect { (currentPage, currentOffset) ->
+//                if (currentPage == 0 && currentOffset.y <= 1f) {
+//              viewModel.setTopBarVisible(true)
+//                    scrollAccumulator = 0f
+//                }
+//                else
+                if (currentPage == lastPage) {
+                    val deltaY = currentOffset.y - lastOffsetY
+                    
+                    if ((deltaY > 0 && scrollAccumulator < 0) || (deltaY < 0 && scrollAccumulator > 0)) {
+                        scrollAccumulator = 0f
                     }
+                    
+                    scrollAccumulator += deltaY
+                    
+                    if (scrollAccumulator > 25f) {
+                        // Scrolling UP in PDF -> SHOW top bar
+                        viewModel.setTopBarVisible(true)
+                        scrollAccumulator = 0f
+                    } else if (scrollAccumulator < -25f) {
+                        // Scrolling DOWN in PDF -> HIDE top bar
+                        viewModel.setTopBarVisible(false)
+                        scrollAccumulator = 0f
+                    }
+                } else if (currentPage > lastPage) {
+                    viewModel.setTopBarVisible(false)
+                    scrollAccumulator = 0f
+                } else {
+                    viewModel.setTopBarVisible(true)
+                    scrollAccumulator = 0f
                 }
-        }
+                lastPage = currentPage
+                lastOffsetY = currentOffset.y
+            }
     }
 
     LaunchedEffect(pdfDocument, isRestoring) {
@@ -313,7 +327,8 @@ fun NativePdfReaderScreen(
             val match = searchResults[currentMatchIndex]
             val firstRect = match.match.bounds.firstOrNull()
             if (firstRect != null) {
-                pdfViewerState.scrollToPosition(PdfPoint(match.pageNum, firstRect.left, firstRect.top))
+                val yOffset = (firstRect.top - 8f).coerceAtLeast(0f)
+                pdfViewerState.scrollToPosition(PdfPoint(match.pageNum, firstRect.left, yOffset))
             }
         }
     }
@@ -419,7 +434,10 @@ fun NativePdfReaderScreen(
         }
 
         if (pdfUri != null && pdfDocument != null) {
-            Box(modifier = Modifier.weight(1f)) {
+            Box(modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+            ) {
                 PdfViewer(
                     modifier = Modifier
                         .onSizeChanged { viewportSize = it }
@@ -447,10 +465,7 @@ fun NativePdfReaderScreen(
                     pdfDocument = pdfDocument!!,
                     state = pdfViewerState,
                     verticalPageSpacing = pageGap.dp,
-                    contentPadding = PaddingValues(
-                        top = contentPadding.calculateTopPadding(),
-                        bottom = contentPadding.calculateBottomPadding()
-                    ),
+                    contentPadding = contentPadding,
                     fastScrollConfig = if (controlsVisible) fastScrollConfig else hiddenFastScrollConfig,
                 )
 

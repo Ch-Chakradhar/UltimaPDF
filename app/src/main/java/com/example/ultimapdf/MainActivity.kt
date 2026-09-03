@@ -8,7 +8,6 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
-import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -31,11 +30,15 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -59,11 +62,11 @@ import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,9 +74,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.IntentCompat
@@ -200,6 +204,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Suppress("UnusedMaterial3ScaffoldPaddingParameter")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -216,13 +221,12 @@ fun MainScreen(
     val currentMatchIndex by viewModel.currentMatchIndex.collectAsStateWithLifecycle()
     val totalMatchCount by viewModel.totalMatchCount.collectAsStateWithLifecycle()
     val isImmersive by viewModel.isImmersive.collectAsStateWithLifecycle()
+    val isTopBarVisible by viewModel.isTopBarVisible.collectAsStateWithLifecycle()
     val currentTitle by viewModel.currentTitle.collectAsStateWithLifecycle()
 
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val pdfViewerState = remember(pdfUri) { PdfViewerState() }
 
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     
     BackHandler(enabled = pdfUri != null || isSearching) {
         if (isSearching) {
@@ -233,6 +237,7 @@ fun MainScreen(
     }
 
     var fabVisible by remember { mutableStateOf(false) }
+    var menuExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(isSearching, pdfUri, pdfViewerState.firstVisiblePage) {
         if (pdfUri != null && !isSearching) {
@@ -259,22 +264,100 @@ fun MainScreen(
         }
     }
 
+    val density = LocalDensity.current
+    var searchBarHeightPx by remember { mutableIntStateOf(0) }
+    var topAppBarHeightPx by remember { mutableIntStateOf(0) }
+
+    val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val navBarHeight = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    
+    val measuredTopBarPadding = if (isSearching) {
+        if (searchBarHeightPx > 0) with(density) { searchBarHeightPx.toDp() } else statusBarHeight + 104.dp
+    } else {
+        if (topAppBarHeightPx > 0) with(density) { topAppBarHeightPx.toDp() } else statusBarHeight + 64.dp
+    }
+
+    val pdfTopPadding = if (isSearching) {
+        (measuredTopBarPadding - 60.dp).coerceAtLeast(0.dp)
+    } else {
+        measuredTopBarPadding
+    }
+
+    val pdfScreenModifier = if (isSearching) {
+        Modifier
+            .fillMaxSize()
+            .padding(top = pdfTopPadding)
+    } else {
+        Modifier.fillMaxSize()
+    }
+
+    val pdfScreenContentPadding = if (isSearching) {
+        PaddingValues(top = 0.dp, bottom = navBarHeight)
+    } else {
+        PaddingValues(top = measuredTopBarPadding, bottom = navBarHeight)
+    }
+
     Scaffold(
-        modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
+        floatingActionButton = {
             AnimatedVisibility(
-                visible = !isImmersive,
+                visible = fabVisible,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut()
+            ) {
+                FloatingActionButton(
+                    onClick = {
+                        activity?.requestedOrientation = if (isLandscape) {
+                            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                        } else {
+                            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                        }
+                    }
+                ) {
+                    Icon(Icons.Default.ScreenRotation, contentDescription = "Rotate Screen")
+                }
+            }
+        }
+    ) { _ ->
+        Box(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            NativePdfReaderScreen(
+                viewModel = viewModel,
+                modifier = pdfScreenModifier,
+                contentPadding = pdfScreenContentPadding,
+                viewMode = viewMode,
+                pageGap = pageGap,
+                pdfViewerState = pdfViewerState,
+                fabVisible = fabVisible
+            )
+
+            AnimatedVisibility(
+                visible = !isImmersive && (isTopBarVisible || isSearching || pdfUri == null),
                 enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
+                exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter)
             ) {
                 if (isSearching) {
-                    Surface(tonalElevation = 3.dp) {
-                        Column {
+                    Surface(
+                        tonalElevation = 3.dp,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.surface,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onGloballyPositioned { coordinates ->
+                                searchBarHeightPx = coordinates.size.height
+                            }
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .windowInsetsPadding(WindowInsets.statusBars)
+                                .fillMaxWidth()
+                        ) {
                             SearchBar(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
                                 inputField = {
                                     SearchBarDefaults.InputField(
                                         query = searchQuery,
@@ -314,12 +397,13 @@ fun MainScreen(
                                 },
                                 expanded = false,
                                 onExpandedChange = { },
+                                windowInsets = WindowInsets(0, 0, 0, 0),
                                 content = { }
                             )
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                                    .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 6.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 FilterChip(
@@ -337,6 +421,9 @@ fun MainScreen(
                     }
                 } else {
                     TopAppBar(
+                        modifier = Modifier.onGloballyPositioned { coordinates ->
+                            topAppBarHeightPx = coordinates.size.height
+                        },
                         title = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 if (currentTitle == "UltimaPDF") {
@@ -369,9 +456,6 @@ fun MainScreen(
                                 IconButton(onClick = { viewModel.setSearching(true) }) {
                                     Icon(Icons.Default.Search, contentDescription = "Search")
                                 }
-
-                                var menuExpanded by remember { mutableStateOf(false) }
-
                                 Box {
                                     IconButton(onClick = { menuExpanded = true }) {
                                         Icon(Icons.Default.MoreVert, contentDescription = "More options")
@@ -381,19 +465,27 @@ fun MainScreen(
                                         onDismissRequest = { menuExpanded = false }
                                     ) {
                                         DropdownMenuItem(
-                                            text = { Text("Share") },
+                                            text = { Text("Share PDF") },
                                             leadingIcon = {
-                                                Icon(Icons.Default.Share, contentDescription = null)
+                                                Icon(
+                                                    imageVector = Icons.Default.Share,
+                                                    contentDescription = null
+                                                )
                                             },
                                             onClick = {
                                                 menuExpanded = false
-                                                pdfUri?.let { uri -> FileUtil.sharePdf(context, uri) }
+                                                pdfUri?.let { uri ->
+                                                    FileUtil.sharePdf(context, uri)
+                                                }
                                             }
                                         )
                                         DropdownMenuItem(
                                             text = { Text("Settings") },
                                             leadingIcon = {
-                                                Icon(Icons.Default.Settings, contentDescription = null)
+                                                Icon(
+                                                    imageVector = Icons.Default.Settings,
+                                                    contentDescription = null
+                                                )
                                             },
                                             onClick = {
                                                 menuExpanded = false
@@ -408,41 +500,10 @@ fun MainScreen(
                                 }
                             }
                         },
-                        scrollBehavior = scrollBehavior,
-                        windowInsets = WindowInsets(0, 0, 0, 0)
+                        windowInsets = WindowInsets.statusBars
                     )
                 }
             }
-        },
-        floatingActionButton = {
-            AnimatedVisibility(
-                visible = fabVisible,
-                enter = fadeIn() + scaleIn(),
-                exit = fadeOut() + scaleOut()
-            ) {
-                FloatingActionButton(
-                    onClick = {
-                        activity?.requestedOrientation = if (isLandscape) {
-                            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                        } else {
-                            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                        }
-                    }
-                ) {
-                    Icon(Icons.Default.ScreenRotation, contentDescription = "Rotate Screen")
-                }
-            }
         }
-    ) { innerPadding ->
-        NativePdfReaderScreen(
-            viewModel = viewModel,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = innerPadding,
-            scrollBehavior = scrollBehavior,
-            viewMode = viewMode,
-            pageGap = pageGap,
-            pdfViewerState = pdfViewerState,
-            fabVisible = fabVisible
-        )
     }
 }
