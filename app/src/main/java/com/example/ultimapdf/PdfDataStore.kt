@@ -5,14 +5,14 @@ import android.content.res.Configuration
 import android.net.Uri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
-
-import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
@@ -24,6 +24,7 @@ object PdfDataStore {
     private val PAGE_GAP = intPreferencesKey("page_gap")
     private val RECENT_FILES = stringPreferencesKey("recent_files")
     private val APP_THEME = intPreferencesKey("app_theme")
+    private val OCR_ENABLED = booleanPreferencesKey("experimental_ocr")
 
     private fun getSafeKey(uri: String): String {
         val digest = MessageDigest.getInstance("MD5")
@@ -154,6 +155,26 @@ object PdfDataStore {
     suspend fun savePageGap(context: Context, gap: Int) {
         context.dataStore.edit { preferences ->
             preferences[PAGE_GAP] = gap
+        }
+    }
+
+    fun getOcrEnabled(context: Context): Flow<Boolean> {
+        return context.dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    emit(androidx.datastore.preferences.core.emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences[OCR_ENABLED] ?: false
+            }
+    }
+
+    suspend fun saveOcrEnabled(context: Context, enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[OCR_ENABLED] = enabled
         }
     }
 

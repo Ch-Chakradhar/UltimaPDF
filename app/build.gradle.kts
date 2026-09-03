@@ -69,8 +69,9 @@ kotlin {
 }
 
 dependencies {
-    implementation("androidx.pdf:pdf-viewer:1.0.0-alpha19")
-    implementation("androidx.pdf:pdf-compose:1.0.0-alpha19")
+    implementation(libs.androidx.pdf.viewer)
+    implementation(libs.androidx.pdf.compose)
+    implementation(libs.androidx.pdf.ocr.play.services)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

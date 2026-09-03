@@ -160,6 +160,7 @@ class MainActivity : ComponentActivity() {
                 
                 val viewMode by PdfDataStore.getViewMode(context).collectAsState(initial = defaultViewMode)
                 val pageGap by PdfDataStore.getPageGap(context).collectAsState(initial = 8)
+                val isOcrEnabled by PdfDataStore.getOcrEnabled(context).collectAsState(initial = false)
 
                 NavHost(
                     navController = navController, 
@@ -172,6 +173,7 @@ class MainActivity : ComponentActivity() {
                             viewModel = viewModel,
                             viewMode = viewMode,
                             pageGap = pageGap,
+                            isOcrEnabled = isOcrEnabled,
                             onNavigateToSettings = { navController.navigate("settings") }
                         )
                     }
@@ -195,6 +197,12 @@ class MainActivity : ComponentActivity() {
                                     PdfDataStore.savePageGap(context, gap)
                                 }
                             },
+                            isOcrEnabled = isOcrEnabled,
+                            onOcrToggled = { enabled ->
+                                scope.launch {
+                                    PdfDataStore.saveOcrEnabled(context, enabled)
+                                }
+                            },
                             onBack = { navController.popBackStack() }
                         )
                     }
@@ -211,6 +219,7 @@ fun MainScreen(
     viewModel: PdfViewModel,
     viewMode: PdfViewMode,
     pageGap: Int,
+    isOcrEnabled: Boolean = false,
     onNavigateToSettings: () -> Unit
 ) {
     val pdfUri by viewModel.pdfUri.collectAsStateWithLifecycle()
@@ -329,6 +338,7 @@ fun MainScreen(
                 contentPadding = pdfScreenContentPadding,
                 viewMode = viewMode,
                 pageGap = pageGap,
+                isOcrEnabled = isOcrEnabled,
                 pdfViewerState = pdfViewerState,
                 fabVisible = fabVisible
             )

@@ -7,4 +7,7 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools-proguard.html
 
-# Add any custom keep rules here.
+# ML Kit and PDF OCR ProGuard Rules
+-keep class com.google.mlkit.** { *; }
+-keep class com.google.android.gms.vision.** { *; }
+-keep class androidx.pdf.ocr.** { *; }

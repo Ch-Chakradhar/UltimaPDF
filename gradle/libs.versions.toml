@@ -7,16 +7,17 @@ espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.11.0"
 activityCompose = "1.13.0"
 kotlin = "2.4.10"
-composeBom = "2026.06.01"
+composeBom = "2026.08.00"
 pdfDocumentService = "1.0.0-beta01"
 datastore = "1.2.1"
-navigation = "2.9.8"
+navigation = "2.10.0"
 material = "1.14.0"
-appcompat = "1.7.1"
-
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-pdf-compose = { module = "androidx.pdf:pdf-compose", version.ref = "pdfDocumentService" }
+androidx-pdf-ocr-play-services = { module = "androidx.pdf:pdf-ocr-play-services", version.ref = "pdfDocumentService" }
+androidx-pdf-viewer = { module = "androidx.pdf:pdf-viewer", version.ref = "pdfDocumentService" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }

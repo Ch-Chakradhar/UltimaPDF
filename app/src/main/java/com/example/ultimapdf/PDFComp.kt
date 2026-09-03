@@ -45,6 +45,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -86,10 +87,13 @@ import androidx.pdf.PdfRect
 import androidx.pdf.compose.FastScrollConfiguration
 import androidx.pdf.compose.PdfViewer
 import androidx.pdf.compose.PdfViewerState
+import androidx.pdf.ocr.playservices.MlKitOcrProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -99,7 +103,7 @@ private fun getFileName(context: android.content.Context, uri: Uri): String {
         if (uri.scheme == "content") {
             val cursor = try {
                 context.contentResolver.query(uri, null, null, null, null)
-            } catch (e: SecurityException) {
+            } catch (_: SecurityException) {
                 null
             }
             cursor?.use { c ->
@@ -124,30 +128,36 @@ private fun getFileName(context: android.content.Context, uri: Uri): String {
     return result ?: "Unknown"
 }
 
+private val pdfRendererMutex = Mutex()
+
 @Composable
 fun PdfThumbnail(uri: Uri, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val thumbnail by produceState<Bitmap?>(initialValue = null, key1 = uri) {
         value = withContext(Dispatchers.IO) {
-            try {
-                context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                    val renderer = PdfRenderer(pfd)
-                    if (renderer.pageCount > 0) {
-                        val page = renderer.openPage(0)
-                        val width = 300
-                        val height = (width * page.height / page.width).coerceAtLeast(1)
-                        val bitmap = createBitmap(width, height)
-                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        page.close()
-                        renderer.close()
-                        bitmap
-                    } else {
-                        renderer.close()
-                        null
+            pdfRendererMutex.withLock {
+                try {
+                    context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                        PdfRenderer(pfd).use { renderer ->
+                            if (renderer.pageCount > 0) {
+                                renderer.openPage(0).use { page ->
+                                    val pageWidth = page.width
+                                    val pageHeight = page.height
+                                    val width = 300
+                                    val height = if (pageWidth > 0) {
+                                        (width * pageHeight / pageWidth).coerceAtLeast(1)
+                                    } else 300
+                                    val bitmap = createBitmap(width, height)
+                                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                    bitmap
+                                }
+                            } else null
+                        }
                     }
+                } catch (e: Throwable) {
+                    e.printStackTrace()
+                    null
                 }
-            } catch (e: Exception) {
-                null
             }
         }
     }
@@ -184,10 +194,22 @@ fun NativePdfReaderScreen(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     viewMode: PdfViewMode = PdfViewMode.NORMAL,
     pageGap: Int = 8,
+    isOcrEnabled: Boolean = false,
     pdfViewerState: PdfViewerState = remember { PdfViewerState() },
     fabVisible: Boolean = false
 ) {
     val context = LocalContext.current
+    val ocrProvider = remember(isOcrEnabled) {
+        if (isOcrEnabled) {
+            MlKitOcrProvider()
+        } else null
+    }
+
+    DisposableEffect(ocrProvider) {
+        onDispose {
+            ocrProvider?.close()
+        }
+    }
     val pdfUri by viewModel.pdfUri.collectAsStateWithLifecycle()
     val pdfDocument by viewModel.pdfDocument.collectAsStateWithLifecycle()
     val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
@@ -464,6 +486,8 @@ fun NativePdfReaderScreen(
                         .applyPdfViewMode(viewMode),
                     pdfDocument = pdfDocument!!,
                     state = pdfViewerState,
+                    isImageSelectionEnabled = isOcrEnabled,
+                    ocrProvider = ocrProvider,
                     verticalPageSpacing = pageGap.dp,
                     contentPadding = contentPadding,
                     fastScrollConfig = if (controlsVisible) fastScrollConfig else hiddenFastScrollConfig,

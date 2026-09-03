@@ -220,7 +220,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
                 doc.searchDocument(query, 0 until doc.pageCount)
             }
             val flattenedResults = mutableListOf<SearchResult>()
-            
+
             // Extract text contents for case/word validation if needed
             for (i in 0 until results.size) {
                 val pageNum = results.keyAt(i)
@@ -235,7 +235,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
                     
                     if (start + length <= pageText.length) {
                         val textSegment = pageText.substring(start, start + length)
-                        
+
                         val caseValid = if (_matchCase.value) textSegment == query else true
                         val wordValid = if (_wholeWord.value) {
                             val before = if (start > 0) pageText[start - 1] else ' '
