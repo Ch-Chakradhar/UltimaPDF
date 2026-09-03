@@ -3,6 +3,7 @@ package com.example.ultimapdf
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -59,5 +60,27 @@ object FileUtil {
             e.printStackTrace()
             null
         }
+    }
+
+    fun sharePdf(context: Context, uri: Uri) {
+        val shareableUri: Uri = if (uri.scheme == "file") {
+            val file = File(uri.path ?: return)
+            FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+        } else {
+            uri
+        }
+
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(android.content.Intent.EXTRA_STREAM, shareableUri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        val chooser = android.content.Intent.createChooser(intent, "Share PDF")
+        context.startActivity(chooser)
     }
 }

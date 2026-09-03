@@ -62,6 +62,12 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        optIn.add("androidx.pdf.ExperimentalPdfApi")
+    }
+}
+
 dependencies {
     implementation("androidx.pdf:pdf-viewer:1.0.0-alpha19")
     implementation("androidx.pdf:pdf-compose:1.0.0-alpha19")

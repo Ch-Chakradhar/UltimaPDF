@@ -1,3 +1,5 @@
+@file:OptIn(androidx.pdf.ExperimentalPdfApi::class)
+
 package com.example.ultimapdf
 
 import android.app.Activity
@@ -23,6 +25,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -38,9 +41,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
@@ -254,6 +261,7 @@ fun MainScreen(
 
     Scaffold(
         modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             AnimatedVisibility(
                 visible = !isImmersive,
@@ -361,9 +369,43 @@ fun MainScreen(
                                 IconButton(onClick = { viewModel.setSearching(true) }) {
                                     Icon(Icons.Default.Search, contentDescription = "Search")
                                 }
-                            }
-                            IconButton(onClick = onNavigateToSettings) {
-                                Icon(Icons.Default.Settings, contentDescription = "Settings")
+
+                                var menuExpanded by remember { mutableStateOf(false) }
+
+                                Box {
+                                    IconButton(onClick = { menuExpanded = true }) {
+                                        Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                                    }
+                                    DropdownMenu(
+                                        expanded = menuExpanded,
+                                        onDismissRequest = { menuExpanded = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Share") },
+                                            leadingIcon = {
+                                                Icon(Icons.Default.Share, contentDescription = null)
+                                            },
+                                            onClick = {
+                                                menuExpanded = false
+                                                pdfUri?.let { uri -> FileUtil.sharePdf(context, uri) }
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Settings") },
+                                            leadingIcon = {
+                                                Icon(Icons.Default.Settings, contentDescription = null)
+                                            },
+                                            onClick = {
+                                                menuExpanded = false
+                                                onNavigateToSettings()
+                                            }
+                                        )
+                                    }
+                                }
+                            } else {
+                                IconButton(onClick = onNavigateToSettings) {
+                                    Icon(Icons.Default.Settings, contentDescription = "Settings")
+                                }
                             }
                         },
                         scrollBehavior = scrollBehavior,
@@ -395,11 +437,12 @@ fun MainScreen(
         NativePdfReaderScreen(
             viewModel = viewModel,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = innerPadding.calculateBottomPadding()),
+            contentPadding = innerPadding,
             scrollBehavior = scrollBehavior,
             viewMode = viewMode,
             pageGap = pageGap,
-            pdfViewerState = pdfViewerState
+            pdfViewerState = pdfViewerState,
+            fabVisible = fabVisible
         )
     }
 }

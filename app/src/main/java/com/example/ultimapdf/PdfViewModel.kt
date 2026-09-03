@@ -1,3 +1,5 @@
+@file:OptIn(androidx.pdf.ExperimentalPdfApi::class)
+
 package com.example.ultimapdf
 
 import android.app.Application

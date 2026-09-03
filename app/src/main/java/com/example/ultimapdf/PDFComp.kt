@@ -1,3 +1,5 @@
+@file:OptIn(androidx.pdf.ExperimentalPdfApi::class)
+
 package com.example.ultimapdf
 
 import android.graphics.Bitmap
@@ -185,7 +187,8 @@ fun NativePdfReaderScreen(
     scrollBehavior: TopAppBarScrollBehavior? = null,
     viewMode: PdfViewMode = PdfViewMode.NORMAL,
     pageGap: Int = 8,
-    pdfViewerState: PdfViewerState = remember { PdfViewerState() }
+    pdfViewerState: PdfViewerState = remember { PdfViewerState() },
+    fabVisible: Boolean = false
 ) {
     val context = LocalContext.current
     val pdfUri by viewModel.pdfUri.collectAsStateWithLifecycle()
@@ -198,7 +201,7 @@ fun NativePdfReaderScreen(
     val isImmersive by viewModel.isImmersive.collectAsStateWithLifecycle()
     val passwordRequired by viewModel.passwordRequired.collectAsStateWithLifecycle()
     val isPasswordIncorrect by viewModel.isPasswordIncorrect.collectAsStateWithLifecycle()
-    
+
     var controlsVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(isImmersive, pdfUri) {
@@ -213,7 +216,7 @@ fun NativePdfReaderScreen(
                 }
         }
     }
-    
+
     val recentFiles by PdfDataStore.getRecentFiles(context).collectAsState(initial = emptyList())
 
     val currentMatchColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f).toArgb()
@@ -275,7 +278,7 @@ fun NativePdfReaderScreen(
                             scrollBehavior.state.heightOffset = (scrollBehavior.state.heightOffset + 2*deltaY).coerceIn(
                                 scrollBehavior.state.heightOffsetLimit, 0f
                             )
-                            scrollBehavior.state.contentOffset -= deltaY
+//                            scrollBehavior.state.contentOffset += 2*deltaY
                             lastOffsetY = currentOffset.y
                         }
                     } else {
@@ -317,14 +320,14 @@ fun NativePdfReaderScreen(
 
     Column(
         modifier = modifier
-            .fillMaxSize()
-            .padding(contentPadding),
+            .fillMaxSize(),
         verticalArrangement = if (pdfDocument == null && pdfUri == null) Arrangement.Top else Arrangement.Center
     ) {
         if (pdfDocument == null && pdfUri == null){
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .padding(contentPadding)
                     .padding(horizontal = 16.dp)
             ) {
                 if (recentFiles.isEmpty()) {
@@ -419,8 +422,8 @@ fun NativePdfReaderScreen(
             Box(modifier = Modifier.weight(1f)) {
                 PdfViewer(
                     modifier = Modifier
-                        .fillMaxSize()
                         .onSizeChanged { viewportSize = it }
+                        .fillMaxSize()
                         .pointerInput(Unit) {
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false)
@@ -444,17 +447,20 @@ fun NativePdfReaderScreen(
                     pdfDocument = pdfDocument!!,
                     state = pdfViewerState,
                     verticalPageSpacing = pageGap.dp,
-                    contentPadding = contentPadding,
+                    contentPadding = PaddingValues(
+                        top = contentPadding.calculateTopPadding(),
+                        bottom = contentPadding.calculateBottomPadding()
+                    ),
                     fastScrollConfig = if (controlsVisible) fastScrollConfig else hiddenFastScrollConfig,
                 )
 
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = controlsVisible && (pdfDocument?.pageCount ?: 0) > 0,
+                    visible = fabVisible && (pdfDocument?.pageCount ?: 0) > 0,
                     enter = fadeIn(),
                     exit = fadeOut(),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 32.dp)
+                        .padding(bottom = 32.dp + contentPadding.calculateBottomPadding())
                 ) {
                     Surface(
                         color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.7f),
